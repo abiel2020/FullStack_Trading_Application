@@ -4,19 +4,10 @@ from datetime import date
 from alpaca_trade_api import TimeFrame, TimeFrameUnit
 import alpha_vantage 
 from alpha_vantage.timeseries import TimeSeries
+import smtplib, ssl
 
-
-def get_minute_data(ticker):
-    ts = TimeSeries(key=config.ALPHA_KEY,
-                    output_format='pandas', indexing_type='date')
-    df, _ = ts.get_intraday(ticker, interval='1min', outputsize='full')
-
-    df.rename(columns={"1. open": "open", "2. high": "high", "3. low": "low", "4. close": "close",
-        "5. volume": "volume",  "date": "date"}, inplace=True)
-
-    df = df.iloc[::-1]
-
-    return df
+# Create a secure SSL context
+context = ssl.create_default_context()
 
 connection = sqlite3.connect(config.DB_FILE)
 connection.row_factory = sqlite3.Row
@@ -39,47 +30,38 @@ cursor.execute("""
 stocks = cursor.fetchall()
 symbols = [stock['symbol'] for stock in stocks]
 
-
-api = tradeapi.REST(config.API_KEY, config.SECRET_KEY, base_url=config.API_URL)
-
-orders = api.list_orders()
-existing_order_symbols = [order.symbol for order in orders]
-
 current_date = date.today().isoformat()
 start_min_bar = f"2023-12-18 09:30:00+00:00"
 end_min_bar = f"{current_date} 09:45:00+00:00"
+
+api = tradeapi.REST(config.API_KEY, config.SECRET_KEY, base_url=config.API_URL)
+
+orders = api.list_orders(status='all',limit=500, after=f"{current_date}T13:30:00Z")
+existing_order_symbols = [order.symbol for order in orders]
+
+messages = []
 
 for symbol in symbols:
     #minute_bars = get_minute_data(symbol)
     minute_bars = api.get_bars(symbol,TimeFrame(1,TimeFrameUnit.Minute), start="2023-12-18").df
     
-    print(symbol)
-    
     opening_range_mask = (minute_bars.index >= start_min_bar) & (minute_bars.index < end_min_bar)
     opening_range_bars = minute_bars.loc[opening_range_mask]
-    
-    print(opening_range_bars)
     
     opening_range_low = opening_range_bars['low'].min()
     opening_range_high = opening_range_bars['high'].max()
     opening_range = opening_range_high - opening_range_low
-    
-    print(opening_range_low)
-    print(opening_range_high)
-    print(opening_range)
 
     after_opening_range_mask = minute_bars.index >= end_min_bar
     after_opening_range_bars = minute_bars.loc[after_opening_range_mask]
-    
-    print(after_opening_range_bars)
 
     after_opening_range_breakout = after_opening_range_bars[after_opening_range_bars['close']>opening_range_high]
 
     if not after_opening_range_breakout.empty:
         if symbol not in existing_order_symbols:
-            print(after_opening_range_breakout)
             limit_price = after_opening_range_breakout.iloc[0]['close']
-            print(limit_price)
+            messages.append(f"placing order for {symbol} at {limit_price}, closed above {opening_range_high}\n\n {after_opening_range_breakout.iloc[0]}\n\n")
+
             print(f"placing order for {symbol} at {limit_price}, closed above {opening_range_high} at {after_opening_range_breakout.iloc[0]}")
 
             api.submit_order(
@@ -99,3 +81,21 @@ for symbol in symbols:
             )
         else:
             print(f"Already in order for {symbol}, skipping")
+print("sending email")
+
+"""with smtplib.SMTP_SSL(config.EMAIL_HOST, config.EMAIL_PORT, context=context) as server:
+    try:
+        server.login(config.EMAIL_ADDRESS, config.EMAIL_PORT)
+        # TODO: Send email here
+    except Exception as e:
+        print(f"Error fetching bars: {e}")
+        
+    email_message = f"Subject: Trade Notifications for {current_date}\n\n"
+    email_message += "\n\n".join(messages)
+    try:
+        server.sendmail(config.EMAIL_ADDRESS, config.EMAIL_SMS, email_message)#sends sms
+        server.sendmail(config.EMAIL_ADDRESS, config.EMAIL_ADDRESS, email_message)#sends email
+    except Exception as e:
+        print(f"Error fetching bars: {e}")
+    print("sent email")
+"""

@@ -26,7 +26,7 @@ chunk_size = 500
 for i in range(0, len(symbols), chunk_size):
     symbol_chunk = symbols[i:i+chunk_size]
     try:
-        bars = api.get_bars(symbol_chunk, TimeFrame(1,TimeFrameUnit.Day), "2023-12-12", "2023-12-15", adjustment='raw')
+        bars = api.get_bars(symbol_chunk, TimeFrame(1,TimeFrameUnit.Day), "2023-12-12", adjustment='raw')
     except Exception as e:
         #print(f"Error fetching bars: {e}")
         continue  # Skip to the next chunk if there's an error

@@ -23,8 +23,16 @@ def index(request: Request):
         GROUP BY stock_id
         ORDER BY symbol)
         WHERE date = ?""", (date.today().isoformat(),))
+    elif stock_filter == 'new_closing_lows':
+        cursor.execute("""
+        SELECT * FROM (select symbol, name, stock_id, min(close), date
+        from stock_price join stock on stock.id = stock_price.stock_id
+        GROUP BY stock_id
+        ORDER BY symbol)
+        WHERE date = ?""", ("2023-12-21",))
     else:
         cursor.execute("""SELECT id, symbol, name FROM stock ORDER BY symbol""")
+    
     rows = cursor.fetchall()
     return templates.TemplateResponse("index.html", {"request": request, "stocks": rows})
 
@@ -39,9 +47,7 @@ def stock_detail(request: Request, symbol):
     cursor.execute("""SELECT id, symbol, name FROM stock WHERE symbol = ?""", (symbol,))
     row = cursor.fetchone()
 
-    cursor.execute("""
-        SELECT * FROM stock_price WHERE stock_id = ?
-    """, (row['id'],))
+    cursor.execute("""SELECT * FROM stock_price WHERE stock_id = ?""", (row['id'],))
     bars = cursor.fetchall()
     return templates.TemplateResponse("stock_detail.html", {"request": request, "stock": row, "bars": bars, "strategies":strategies})
 
