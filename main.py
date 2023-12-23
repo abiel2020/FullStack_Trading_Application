@@ -32,9 +32,18 @@ def index(request: Request):
         WHERE date = ?""", ("2023-12-21",))
     else:
         cursor.execute("""SELECT id, symbol, name FROM stock ORDER BY symbol""")
-    
     rows = cursor.fetchall()
-    return templates.TemplateResponse("index.html", {"request": request, "stocks": rows})
+
+    cursor.execute("""SELECT symbol, rsi_14, sma_20, sma_50, close
+        from stock join stock_price on stock_price.stock_id = stock.id
+        where date = '2023-12-22' """)
+    
+    indicator_rows = cursor.fetchall()
+    indicator_values = {}
+    for row in indicator_rows:
+        indicator_values[row['symbol']] = row
+    
+    return templates.TemplateResponse("index.html", {"request": request, "stocks": rows, "indicator_values": indicator_values})
 
 @app.get("/stock/{symbol}")
 def stock_detail(request: Request, symbol):
